@@ -13,11 +13,11 @@
      PixiJS  : 戦闘盤面の描画（WebGL）      GSAP : アニメーション
      Tone.js : 音楽と効果音の合成            Chart.js : 国力推移グラフ
      すべて取得に失敗しても自前描画／自前音で動く（オフラインでも遊べる） -->
+<script>window.__lib=function(k,ok){ (window.LIBOK=window.LIBOK||{}).set ? LIBOK.set(k,ok) : LIBOK[k]=ok; };</script>
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.6.6/dist/pixi.min.js" onload="window.__lib('pixi',1)" onerror="window.__lib('pixi',0)"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" onload="window.__lib('gsap',1)" onerror="window.__lib('gsap',0)"></script>
 <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js" onload="window.__lib('tone',1)" onerror="window.__lib('tone',0)"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" onload="window.__lib('chart',1)" onerror="window.__lib('chart',0)"></script>
-<script>window.__lib=function(k,ok){ (window.LIBOK=window.LIBOK||{}).set ? LIBOK.set(k,ok) : LIBOK[k]=ok; };</script>
 <style>
 /* ============================================================
    覇業 HEGEMONY  ―  像素 × 水墨 の UI（豪華刷新版）
@@ -1997,10 +1997,20 @@ function newCampaign(stateKey,diff,seedv){
     S.cities[c.k]={owner:c.home,garr:c.garr,walls:c.walls,farms:c.farms,town:c.town,train:1,unrest:0,
                    seen:{g:c.garr,w:c.walls,t:0}};
   });
+  var initComps={
+    cao:{inf:4,arc:2,cav:2,spc:2}, yuan:{inf:3,arc:3,cav:2,spc:2}, gongsun:{inf:2,arc:2,cav:4,spc:2},
+    lv:{inf:2,arc:2,cav:4,spc:2},  yshu:{inf:4,arc:3,cav:1,spc:2}, sun:{inf:3,arc:4,cav:1,spc:2},
+    biao:{inf:3,arc:4,cav:1,spc:2},liu:{inf:3,arc:2,cav:2,spc:3},  ma:{inf:2,arc:1,cav:5,spc:2},
+    zhang:{inf:3,arc:3,cav:1,spc:3}
+  };
   STATES.forEach(function(s){
+    var ic=initComps[s.k]||{inf:4,arc:2,cav:2,spc:2};
     S.st[s.k]={alive:true,gold:60,food:40,men:60,pol:3,fame:0,stab:70,intel:2,
-               armyComp:{inf:4,arc:2,cav:2,spc:2},focus:null,since:0,hatred:{}};
+               armyComp:{inf:ic.inf,arc:ic.arc,cav:ic.cav,spc:ic.spc},focus:null,since:0,hatred:{}};
   });
+  [['lvbu','guanyu'],['lvbu','zhangfei'],['lvbu','hehoude'],['sunjian','huangzu'],['sunjian','liubiao'],
+   ['guanyu','yanliang'],['zhaoyun','wenchou'],['machao','hehouyuan'],['zhugeliang','simayi'],['zhouyu','caoren']
+  ].forEach(function(p){ S.rivals[pk(p[0],p[1])]=1; });
   buildAdj();
   for(var i=0;i<STATES.length;i++) for(var j=i+1;j<STATES.length;j++){
     var a=STATES[i].k,b=STATES[j].k;
@@ -2873,9 +2883,16 @@ var P='p',E='e';
 function wmod(){ return WWEA[(BT&&BT.weather)||S.weather]||WWEA.clear; }
 function pickGenForCity(stateKey,cityKey){
   var inCity=gensAt(cityKey).filter(function(g){ return S.gen[g.k].side===stateKey; });
+  if(!inCity.length){
+    neighbors(cityKey).forEach(function(l){
+      if(S.cities[l.to]&&S.cities[l.to].owner===stateKey){
+        gensAt(l.to).forEach(function(g){ if(S.gen[g.k].side===stateKey) inCity.push(g); });
+      }
+    });
+  }
   var best=null,bv=-1;
   inCity.forEach(function(g){
-    var v=g.lead*2+g.war+g.int;
+    var v=g.lead*2+g.war+g.int+(S.gen[g.k].city===cityKey?20:0);
     if(v>bv){ bv=v; best=g.k; }
   });
   return best;
@@ -2943,7 +2960,14 @@ function makeBattle(fromKey,toKey,commit,attGen,auto,attComp){
   }
   deployInitial(B,'p',meAtk?playerComp:null);
   deployInitial(B,'e',!meAtk?playerComp:null);
-  if(atkGen&&defGen) S.rivals[pk(atkGen,defGen)]=0;
+  if(atkGen&&defGen){
+    var rk=pk(atkGen,defGen),rc=S.rivals[rk]||0;
+    if(rc>0){
+      blog(B,'b_rival',{g:atkGen});
+      if(!auto) logLine('log_rival',{a:atkGen,b:defGen});
+    }
+    S.rivals[rk]=rc+1;
+  }
   blog(B,'b_start',{c:toKey});
   if(B.weather!=='clear'){
     var note={rain:'b_rain',fog:'b_fog',snow:'b_snow',drought:'b_drought'}[B.weather];
@@ -2998,12 +3022,12 @@ function genBattleMap(B){
     }
     var gy=y1,g1=clamp(midx-3,x0+1,x1-1),g2=clamp(midx+3,x0+1,x1-1);
     if(B.tiles[gy][g1].t==='wall') setT(g1,gy,'gate');
+    if(B.tiles[gy][midx].t==='wall') setT(midx,gy,'gate');
     if(B.tiles[gy][g2].t==='wall') setT(g2,gy,'gate');
     for(var iy=0;iy<y1;iy++) for(var ix=x0;ix<=x1;ix++){
       var tt=B.tiles[iy][ix];
       if(tt.t==='plain'||tt.t==='village') tt.walled=true;
     }
-    setT(midx-1,H-2,'gate'); setT(midx+1,H-2,'gate');
   }
   ensurePaths(B);
 }
@@ -3192,10 +3216,12 @@ function dmgOf(B,att,target,counter){
   if(target.kind==='unit'){
     mult=CNT[att.type][target.u.type]||1;
     def=defOf(B,target.u.x,target.u.y)*0.7;
+    var tb=B.basePos[target.u.side];
+    if(tb&&B.gen[target.u.side]&&Math.abs(target.u.x-tb.x)+Math.abs(target.u.y-tb.y)<=2) def+=0.6;
     mult*=1+0.08*flankOf(B,att,target);
     mult*=feudMul(B.gen[att.side],B.gen[target.u.side]);
   }else{
-    mult=B.siege?1.3:1.15;
+    mult=B.siege?1.05:1.15;
     def=TERRAIN.base.def*0.7;
     mult*=feudMul(B.gen[att.side],B.gen[target.side]);
   }
@@ -3211,7 +3237,11 @@ function rollDmg(B,att,target,counter){ return Math.max(1,Math.round(dmgOf(B,att
 /* ---------- 移動・攻撃・損耗 ---------- */
 function bMove(B,u,x,y){ u.x=x; u.y=y; u.moved=true;
   var t=bTile(B,x,y);
-  if(t.t==='village'&&t.owner!==u.side){ t.owner=u.side; blog(B,'b_village',{s:u.side}); }
+  if(t.t==='village'&&t.owner!==u.side){
+    t.owner=u.side;
+    B.morale[u.side]=Math.min(100,B.morale[u.side]+4);
+    blog(B,'b_village',{s:u.side});
+  }
 }
 function attrition(B,side,dmg,u){
   var per=B.commit[side]/Math.max(1,B.cap[side]);
@@ -3222,7 +3252,8 @@ function bKill(B,u){
   var i=B.units.indexOf(u); if(i>=0) B.units.splice(i,1);
   if(B.sel===u.id) B.sel=null;
   var per=B.commit[u.side]/Math.max(1,B.cap[u.side]);
-  B.losses[u.side]=Math.max(B.losses[u.side],B.losses[u.side]);
+  var deadCnt=Math.max(0,B.cap[u.side]-bUnits(B,u.side).length);
+  B.losses[u.side]=Math.min(B.commit[u.side],Math.max(B.losses[u.side],deadCnt*per*0.8));
   B.morale[u.side]=Math.max(0,B.morale[u.side]-8);
   B.tac[enemyOf(u.side)]=Math.min(3,B.tac[enemyOf(u.side)]+1);
   blog(B,'b_kill',{s:u.side,u:u.type});
@@ -3339,6 +3370,7 @@ function useSkill(B,side,tx,ty){
     var target=bUnitAt(B,tx,ty);
     if(target&&target.side===side){
       target.buff=1; target.acted=false; target.moved=false;
+      if(typeof bfx==='function') bfx(B,tx,ty,'+50%','#ffd966');
       sfx('skill'); blog(B,'b_skill',{s:side,k:'charge',n:1}); applied=true;
     }
   }else if(sk.key==='rally'){
@@ -3372,9 +3404,11 @@ function useSkill(B,side,tx,ty){
         B.losses[foe]+=0; B.units.splice(B.units.indexOf(tu),1);
         if(B.sel===tu.id) B.sel=null;
         B.morale[foe]=Math.max(0,B.morale[foe]-10);
+        if(typeof bfx==='function') bfx(B,tx,ty,'!','#e075ff');
         sfx('skill'); blog(B,'b_skill',{s:side,k:'dissent',n:1}); applied=true;
       }else{
         B.morale[foe]=Math.max(0,B.morale[foe]-12);
+        if(typeof bfx==='function') bfx(B,tx,ty,'-12','#e075ff');
         sfx('skill'); blog(B,'b_skill',{s:side,k:'dissent',n:0}); applied=true;
       }
     }
@@ -3397,7 +3431,8 @@ function useSkill(B,side,tx,ty){
   bCheckEnd(B);
   return true;
 }
-function skillNeedsTarget(key){ return key==='fire'||key==='dissent'||key==='volley'; }
+function skillNeedsTarget(key){ return key==='fire'||key==='dissent'||key==='volley'||key==='charge'; }
+var skNeedsTarget=skillNeedsTarget;
 /* ---------- 戦闘AI ---------- */
 function costMap(B,type,targets){
   var dist={},q=[],guard=0,W=wmodOf(B);
@@ -3503,9 +3538,16 @@ function bestAttackFrom(B,u,x,y){
 }
 function aiActUnit(B,u){
   var reach=bReach(B,u),roleAtk=(u.side==='p');
-  var objTiles=roleAtk?[B.basePos.e]:bUnits(B,'p');
-  var cmap=costMap(B,u.type,objTiles);
+  var foeUnits=bUnits(B,enemyOf(u.side));
   var ownBase=B.basePos[u.side],foeBase=B.basePos[enemyOf(u.side)];
+  var campThreat=false;
+  if(ownBase){
+    foeUnits.forEach(function(o){
+      if(Math.abs(o.x-ownBase.x)+Math.abs(o.y-ownBase.y)<=4) campThreat=true;
+    });
+  }
+  var objTiles=roleAtk?[B.basePos.e]:(campThreat&&ownBase?[ownBase]:foeUnits);
+  var cmap=costMap(B,u.type,objTiles);
   var d0=(cmap[u.x+','+u.y]===undefined?40:cmap[u.x+','+u.y]);
   var best=null;
   for(var key in reach){
@@ -3515,20 +3557,20 @@ function aiActUnit(B,u){
     sc+=defOf(B,x,y)*1.6;
     sc-=threatAt(B,x,y,u.side)*0.7;
     if(B.tiles[y][x].t==='village'&&B.tiles[y][x].owner!==u.side) sc+=4.5;
-    if(B.tiles[y][x].t==='gate'&&roleAtk) sc+=1.8;
+    if(B.tiles[y][x].t==='gate') sc+=(roleAtk?1.8:(B.siege?2.4:1.0));
+    if(B.siege&&!roleAtk&&B.tiles[y][x].walled) sc+=1.2;
     if(B.tiles[y][x].t==='ford'&&roleAtk) sc+=1.0;
     var nearEnemy=0;
-    bUnits(B,enemyOf(u.side)).forEach(function(o){
+    foeUnits.forEach(function(o){
       var dd=Math.abs(o.x-x)+Math.abs(o.y-y);
       if(dd<=1) nearEnemy++;
     });
     sc+=nearEnemy*2.2;                                   // 包囲を意識
     if(ownBase){
       var db=Math.abs(x-ownBase.x)+Math.abs(y-ownBase.y);
-      if(db>5) sc-=(db-5)*1.6;
-      if(foeBase&&!roleAtk){
-        var df=Math.abs(foeBase.x-ownBase.x)+Math.abs(foeBase.y-ownBase.y);
-        if(df<=3) sc+=6;                                  // 本営が危なければ戻る
+      if(db>5) sc-=(db-5)*(B.siege&&!roleAtk?2.4:1.6);
+      if(campThreat&&!roleAtk){
+        sc+=Math.max(0,5-db)*2.2;                        // 本営が危なければ戻って守る
       }
     }
     var hit=bestAttackFrom(B,u,x,y);
@@ -3842,8 +3884,15 @@ function buildTitle(){
   var sr=el('seedRnd'); if(sr){ sr.textContent=t('btn_seed'); sr.onclick=function(){ PROF.seed=1+ri(999999); saveProfile(); if(seed) seed.value=PROF.seed; sfx('ui'); }; }
   var note=el('titleNote'),sv=loadSave();
   if(note){
-    if(sv) note.textContent=t('note_saved',{s:sv.me,y:S?S.year:(START_YEAR+Math.floor((sv.turn-1)/4))});
-    else note.textContent=t('note_nosave');
+    var selSt=findState(PROF.state)||STATES[0];
+    var stCities=CITIES.filter(function(c){ return c.home===selSt.k; });
+    var stGarr=stCities.reduce(function(a,c){ return a+c.garr; },0);
+    var stGens=GENERALS.filter(function(g){ return g.side===selSt.k; });
+    var svText=sv?t('note_saved',{s:sv.me,y:S?S.year:(START_YEAR+Math.floor((sv.turn-1)/4))}):t('note_nosave');
+    note.innerHTML='<div style="background:#121b26;border:1px solid #2b3c50;border-left:3px solid '+selSt.col+';padding:5px 7px;margin-bottom:4px;border-radius:2px">'+
+      '<b style="color:#f5ebd2;font-size:11.5px">'+(selSt.n[LANG]||selSt.n.en)+'</b> （'+t('p_cities')+' '+stCities.length+'・'+t('p_garr')+' '+stGarr+'）<br>'+
+      '<span>'+t('p_gens')+' ('+stGens.length+')：'+stGens.map(function(g){ return (g.n[LANG]||g.n.en); }).join('・')+'</span></div>'+
+      '<div>'+esc(svText)+'</div>';
   }
   var cb=el('contBtn'); if(cb) cb.disabled=!sv;
   var wb=el('wipeBtnT'); if(wb) wb.textContent=t('btn_wipe');
@@ -4200,9 +4249,10 @@ function renderCamp(){
   if(tag){ tag.textContent=(state.n[LANG]||state.n.en); tag.style.borderColor=state.col; tag.style.color=mix(state.col,0.5); }
   var dt=el('dateTag'); if(dt) dt.textContent=t('date',{y:S.year,s:t('sea_'+SEASONS[S.season])});
   var wt=el('wethTag'); if(wt){ wt.textContent=t('k_weth',{w:t('w_'+S.weather)}); wt.title=t('wd_'+S.weather); }
-  chipSet('chipGold',me.gold,me.gold<0?'bad':(me.gold<20?'warn2':''));
-  chipSet('chipFood',me.food,me.food<0?'bad':(me.food<upkeepOf(S.me).food?'warn2':''));
-  chipSet('chipMen',me.men,'');
+  var inc=seasonIncome(S.me),up=upkeepOf(S.me),netG=inc.gold-up.gold,netF=inc.food-up.food;
+  chipSet('chipGold',me.gold+'('+(netG>=0?'+':'')+netG+')',me.gold<0?'bad':(me.gold<20||netG<0?'warn2':''));
+  chipSet('chipFood',me.food+'('+(netF>=0?'+':'')+netF+')',me.food<0?'bad':(me.food<up.food||netF<0?'warn2':''));
+  chipSet('chipMen',me.men+'(+'+inc.men+')','');
   chipSet('chipPrestige',calcPrestige(S.me),'');
   chipSet('chipPol',me.pol+(me.pol<1?'!':''),'');
   chipSet('chipIntel',me.intel,me.intel<1?'warn2':'');
@@ -4339,12 +4389,12 @@ function renderCityPanel(){
       var o=S.cities[l.to];
       if(o.owner===S.me){
         var mv=document.createElement('button'); mv.className='mini';
-        mv.innerHTML=t('act_move')+' → '+cNameShort(l.to); mv.disabled=s.pol<1||d.garr<1||!!S.battle;
-        mv.onclick=function(){ S.ui.mode=(S.ui.mode==='move:'+ck)?null:'move:'+ck; sfx('ui'); renderCamp(); };
+        mv.innerHTML=t('act_move')+' → '+cNameShort(l.to)+'<i>+'+d.garr+'</i>'; mv.disabled=s.pol<1||d.garr<1||!!S.battle;
+        mv.onclick=function(){ moveArmy(ck,l.to,true); };
         act.appendChild(mv);
         var sp=document.createElement('button'); sp.className='mini';
-        sp.innerHTML=t('act_split')+' → '+cNameShort(l.to); sp.disabled=mv.disabled;
-        sp.onclick=function(){ S.ui.mode=(S.ui.mode==='split:'+ck)?null:'split:'+ck; sfx('ui'); renderCamp(); };
+        sp.innerHTML=t('act_split')+' → '+cNameShort(l.to)+'<i>+'+Math.ceil(d.garr/2)+'</i>'; sp.disabled=mv.disabled;
+        sp.onclick=function(){ moveArmy(ck,l.to,false); };
         act.appendChild(sp);
       }else if(st(o.owner).alive&&findCity(l.to)){
         var bad=canAttack(ck,l.to);
@@ -4367,18 +4417,24 @@ function renderCityPanel(){
       hg.disabled=s.pol<1||s.gold<30;
       hg.onclick=function(){ hireGen(who,ck); }; act.appendChild(hg);
     }
+    var otherOwned=citiesOf(S.me).filter(function(c2){ return c2.k!==ck; });
+    otherOwned.sort(function(a,b){
+      var wa=neighbors(a.k).some(function(l){ return S.cities[l.to].owner!==S.me&&atWar(S.me,S.cities[l.to].owner); })?2:(neighbors(a.k).some(function(l){ return S.cities[l.to].owner!==S.me; })?1:0);
+      var wb=neighbors(b.k).some(function(l){ return S.cities[l.to].owner!==S.me&&atWar(S.me,S.cities[l.to].owner); })?2:(neighbors(b.k).some(function(l){ return S.cities[l.to].owner!==S.me; })?1:0);
+      return wb-wa||gensAt(a.k).length-gensAt(b.k).length;
+    });
     gens.forEach(function(x){
       var gg=S.gen[x.k];
       var rw=document.createElement('button'); rw.className='mini';
       rw.innerHTML=t('act_reward')+' '+x.n[LANG]+'<i>'+t('loyal')+' '+gg.loyal+'</i>';
       rw.disabled=s.pol<1||s.gold<12;
       rw.onclick=function(){ rewardGen(x.k); }; act.appendChild(rw);
+      var dest=otherOwned[0]||null;
       var pg=document.createElement('button'); pg.className='mini';
-      pg.innerHTML=t('g_lead')+'配置 '+x.n[LANG];
+      pg.innerHTML=t('g_lead')+'配置 '+x.n[LANG]+(dest?('<i>→ '+cNameShort(dest.k)+'</i>'):'');
       pg.title=t('act_move');
-      pg.disabled=s.pol<1;
+      pg.disabled=s.pol<1||!dest;
       pg.onclick=function(){
-        var dest=pick(citiesOf(S.me).filter(function(c2){ return c2.k!==ck; })||[]);
         if(dest) moveGen(x.k,dest.k);
       };
       act.appendChild(pg);
@@ -4437,7 +4493,10 @@ function openAttackSetup(from,to){
   var body=el('setupBody'),ttl=el('setupTitle');
   if(ttl) ttl.textContent=t('act_attack')+' ― '+cityName(to);
   if(!body) return;
-  var gens=gensOf(S.me).filter(function(g){ return S.gen[g.k].city===from; });
+  var gens=gensOf(S.me).filter(function(g){
+    var gc=S.gen[g.k].city;
+    return gc===from||(gc&&S.cities[gc]&&S.cities[gc].owner===S.me&&linkInfo(gc,from));
+  });
   var estHtml=function(n){
     var comp=armyCompForState(S.me,from,to,battleUnitCount(n));
     return TKEYS.map(function(k){ return TYPES[k].glyph+comp[k]; }).join(' ');
@@ -4445,11 +4504,18 @@ function openAttackSetup(from,to){
   var meCol=(findState(S.me)||{}).col||'#888';
   var genHtml=gens.length?('<div class="picklist">'+gens.map(function(g){
     var sel=(S.ui.pending.gen===g.k)?' sel':'';
-    return "<button class='genpick"+sel+"' data-g='"+g.k+"'><img src='"+genPortraitUri(g.k,meCol)+"' alt=''><div><b>"+(g.n[LANG]||g.n.en)+'</b><span>'+
+    var atFrom=(S.gen[g.k].city===from)?'':(' · '+cityName(S.gen[g.k].city));
+    return "<button class='genpick"+sel+"' data-g='"+g.k+"'><img src='"+genPortraitUri(g.k,meCol)+"' alt=''><div><b>"+(g.n[LANG]||g.n.en)+atFrom+'</b><span>'+
       t('g_lead')+' '+g.lead+'・'+t('g_war')+' '+g.war+'・'+t('g_int')+' '+g.int+'・'+SKILLS[g.sk].n[LANG]+'</span></div></button>';
   }).join('')+'</div>'):'<div class="note">'+t('p_nogen')+'</div>';
+  var lkType=lk?lk.t:'plain',isSiege=(to2.walls>=3);
+  var tacTip=(isSiege?('['+t('obj_siege')+'] '+t('adv_siege')+' '):('['+t('obj_field')+'] '))+
+    (lkType==='mountain'?(TYPES.spc.n[LANG]+'・'+TYPES.arc.n[LANG]+'◎ / '+TYPES.cav.n[LANG]+'×'):
+    (lkType==='river'?(TYPES.arc.n[LANG]+'・'+TYPES.inf.n[LANG]+'◎'):
+    (lkType==='hill'?(TYPES.spc.n[LANG]+'・'+TYPES.inf.n[LANG]+'◎'):(TYPES.cav.n[LANG]+'・'+TYPES.inf.n[LANG]+'◎'))));
   body.innerHTML='<p>'+t('setup_body',{f:from,t:to,o:findState(to2.owner).n[LANG],
-      g:(obs.known?obs.garr:'?'),w:(obs.known?obs.walls:'?'),lk:t('lk_'+(lk?lk.t:'plain'))})+'</p>'+
+      g:(obs.known?obs.garr:'?'),w:(obs.known?obs.walls:'?'),lk:t('lk_'+lkType)})+'</p>'+
+    '<div class="hint">'+tacTip+'</div>'+
     '<div class="setrow"><span>'+t('setup_troops')+'</span><input type="range" id="commitR" min="8" max="'+max+'" step="2" value="'+S.ui.pending.commit+'">'+
     '<b class="num" id="commitV">'+S.ui.pending.commit+'</b><span class="note" id="estV">'+t('setup_estv',{c:battleUnitCount(S.ui.pending.commit)})+'</span></div>'+
     '<div class="note">'+t('setup_comp')+'：<span id="compV">'+estHtml(S.ui.pending.commit)+'</span> ／ '+
@@ -4481,7 +4547,16 @@ function openArmySetup(cityKey){
   var body=el('setupBody'),ttl=el('setupTitle');
   if(ttl) ttl.textContent=t('army_title')+' ― '+cityName(cityKey);
   if(!body) return;
+  var presets=[
+    {n:t('lk_plain'),c:{inf:4,arc:2,cav:2,spc:2}},
+    {n:TYPES.cav.n[LANG],c:{inf:2,arc:2,cav:4,spc:2}},
+    {n:t('lk_mountain'),c:{inf:3,arc:3,cav:0,spc:4}},
+    {n:t('lk_river'),c:{inf:3,arc:4,cav:1,spc:2}}
+  ];
   body.innerHTML='<p>'+t('army_body',{c:cityKey,n:ARMY_COMP_SIZE})+'</p>'+
+    '<div class="tabs">'+presets.map(function(p,idx){
+      return "<button class='mini' data-pre='"+idx+"'>"+p.n+' ('+TKEYS.map(function(k){ return TYPES[k].glyph+p.c[k]; }).join('')+')</button>';
+    }).join('')+'</div>'+
     '<div class="compGrid" id="compGrid">'+TKEYS.map(function(k){
       return "<label>"+TYPES[k].n[LANG]+' '+t('th_move')+' '+TYPES[k].move+'・'+t('th_range')+' '+TYPES[k].range+
         "<input type='number' min='0' max='"+ARMY_COMP_SIZE+"' id='comp_"+k+"' value='"+comp[k]+"'></label>";
@@ -4489,14 +4564,24 @@ function openArmySetup(cityKey){
     '<div class="rowline"><span id="compTot">'+t('army_comp_total',{n:armyCompTotal(comp),max:ARMY_COMP_SIZE})+'</span>'+
       '<span>'+t('army_cost',{g:ARMY_REFORM.gold,p:ARMY_REFORM.pol})+'</span></div>'+
     '<p class="note">'+t('cnt_hint')+' 騎→歩→弩→槍→騎　'+t('hint_sel')+'</p>';
+  var updTot=function(){
+    var tot=TKEYS.reduce(function(a,kk){ return a+(parseInt((el('comp_'+kk)||{}).value,10)||0); },0);
+    var row=el('compTot');
+    if(row) row.textContent=t('army_comp_total',{n:tot,max:ARMY_COMP_SIZE});
+  };
   TKEYS.forEach(function(k){
     var inp=el('comp_'+k);
-    if(inp) inp.oninput=function(){
-      var tot=TKEYS.reduce(function(a,kk){ return a+(parseInt(el('comp_'+kk).value,10)||0); },0);
-      var row=el('compTot');
-      if(row) row.textContent=t('army_comp_total',{n:tot,max:ARMY_COMP_SIZE});
-    };
+    if(inp) inp.oninput=updTot;
   });
+  var pbs=body.querySelectorAll('button[data-pre]');
+  for(var pi=0;pi<pbs.length;pi++){
+    pbs[pi].onclick=function(){
+      var pr=presets[+this.getAttribute('data-pre')];
+      if(!pr) return;
+      TKEYS.forEach(function(k){ var inp=el('comp_'+k); if(inp) inp.value=pr.c[k]; });
+      updTot(); sfx('ui');
+    };
+  }
   openOverlay('setupOv');
 }
 function confirmSetup(){
@@ -4507,6 +4592,7 @@ function confirmSetup(){
     var s=st(S.me);
     s.pol-=2; s.gold-=5;
     S.cities[p.from].garr-=p.commit;
+    if(p.gen&&S.gen[p.gen]&&S.gen[p.gen].side===S.me) S.gen[p.gen].city=p.from;
     observe(p.to);
     sfx('march'); logLine('log_march',{f:p.from,t:p.to,n:p.commit});
     saveGame(true);
@@ -4691,7 +4777,7 @@ function drawChart(){
 /* =====================================================================
    10. 戦闘画面 ― 盤面（PixiJS：WebGL描画／取得出来なければ DOM 盤面）
    ===================================================================== */
-var battleMounted=false,BOARD=null,BOARD_KIND=null,FXQ=[];
+var battleMounted=false,BOARD=null,BOARD_KIND=null,FXQ=[],pixiFailed=false;
 function solidUri(col,alpha){
   return 'data:image/svg+xml,'+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 4'><rect width='4' height='4' fill='"+col+"' fill-opacity='"+alpha+"'/></svg>");
 }
@@ -4710,20 +4796,34 @@ function layoutBoard(){
   var cell=cellSize(),holder=el('boardHolder'),px=boardPx(cell);
   if(!holder) return;
   holder.style.width=(px.w+8)+'px'; holder.style.height=(px.h+8)+'px';
-  BOARD_KIND=LIB.pixi?'pixi':'dom';
-  if(!BOARD||BOARD.kind!==BOARD_KIND||(BOARD.cell&&Math.abs(BOARD.cell-cell)>2)){
+  BOARD_KIND=LIB.pixi&&!pixiFailed?'pixi':'dom';
+  if(!BOARD||BOARD.kind!==BOARD_KIND||BOARD.cell!==cell){
     if(BOARD&&BOARD.destroy) { try{ BOARD.destroy(); }catch(e){} }
     BOARD=(BOARD_KIND==='pixi')?new PixiBoard():new DomBoard();
     BOARD.cell=cell;
     battleMounted=false;
   }
-  if(!battleMounted){ mountBoard(); } else { BOARD.resize(cell); renderBattle(); }
+  if(!battleMounted){ mountBoard(); } else { renderBattle(); }
+}
+function fallbackBoard(board,error){
+  if(BOARD!==board) return;
+  console.warn('PixiJS board failed; using DOM board.',error);
+  pixiFailed=true;
+  board.destroy();
+  BOARD_KIND='dom';
+  if(el('pixiHost')){ el('pixiHost').innerHTML=''; el('pixiHost').classList.add('hidden'); }
+  if(el('domBoard')) el('domBoard').classList.remove('hidden');
+  BOARD=new DomBoard(); BOARD.cell=cellSize();
+  BOARD.mount(el('domBoard'),BOARD.cell,function(ok){
+    if(!ok){ console.error('DOM board could not be mounted.'); return; }
+    battleMounted=true; renderBattle();
+  });
 }
 function mountBoard(){
   if(!BT) return;
   var cell=BOARD?BOARD.cell:cellSize();
   if(!BOARD){
-    BOARD_KIND=LIB.pixi?'pixi':'dom';
+    BOARD_KIND=LIB.pixi&&!pixiFailed?'pixi':'dom';
     BOARD=(BOARD_KIND==='pixi')?new PixiBoard():new DomBoard();
     BOARD.cell=cell;
   }
@@ -4733,35 +4833,30 @@ function mountBoard(){
   if(host) host.classList.remove('hidden');
   var self=BOARD;
   BOARD.mount(host,cell,function(ok){
-    if(!ok&&BOARD===self){
-      BOARD_KIND='dom';
-      if(el('pixiHost')) el('pixiHost').innerHTML='';
-      BOARD=new DomBoard(); BOARD.cell=cellSize();
-      if(el('domBoard')) el('domBoard').classList.remove('hidden');
-      if(el('pixiHost')) el('pixiHost').classList.add('hidden');
-      BOARD.mount(el('domBoard'),BOARD.cell,function(){ battleMounted=true; renderBattle(); });
-      return;
-    }
+    if(BOARD!==self) return;
+    if(!ok){ fallbackBoard(self,'initialization failed'); return; }
     battleMounted=true;
     renderBattle();
   });
 }
 /* ---------- Pixi 盤面 ---------- */
-function PixiBoard(){ this.kind='pixi'; this.app=null; this.cell=30; this.layer=null; this.ready=false; this.tex={}; }
+function PixiBoard(){ this.kind='pixi'; this.app=null; this.cell=30; this.layer=null; this.ready=false; this.mounting=false; this.tex={}; }
 PixiBoard.prototype.mount=function(host,cell,cb){
   var self=this;
+  if(this.mounting) return;
   if(typeof PIXI==='undefined'||!PIXI.Application){ if(cb) cb(false); return; }
   if(this.app){ this.destroy(); }
   var app;
   try{ app=new PIXI.Application(); }catch(e){ if(cb) cb(false); return; }
-  this.app=app; this.cell=cell;
+  this.app=app; this.cell=cell; this.mounting=true;
   var px=boardPx(cell);
   var p;
   try{
-    p=app.init({width:px.w+8,height:px.h+8,background:0x0c1219,antialias:false,
+    p=app.init({width:px.w+8,height:px.h+8,background:0x0c1219,antialias:false,autoDensity:true,
                 resolution:Math.min(2,(typeof window!=='undefined'?window.devicePixelRatio||1:1))});
   }catch(e){ if(cb) cb(false); return; }
   Promise.resolve(p).then(function(){
+    if(self.app!==app){ app.destroy(true,{children:true}); return; }
     if(!host){ if(cb) cb(false); return; }
     host.innerHTML='';
     host.style.width=(px.w+8)+'px'; host.style.height=(px.h+8)+'px';
@@ -4775,33 +4870,43 @@ PixiBoard.prototype.mount=function(host,cell,cb){
       var cs=self.cell;
       var x=Math.floor((ev.clientX-r.left-4)/cs),y=Math.floor((ev.clientY-r.top-4)/cs);
       if(x<0||y<0||x>=BT.cols||y>=BT.rows) return;
-      onBoardTap(viewFlip()?x:(colsNow()-1-x),y);
+      onBoardTap(viewFlip()?(colsNow()-1-x):x,vy(y));
     });
-    self.ready=true;
+    self.ready=true; self.mounting=false;
     if(cb) cb(true);
-  })['catch'](function(){ if(cb) cb(false); });
+  })['catch'](function(error){
+    if(self.app!==app) return;
+    console.warn('PixiJS initialization failed.',error);
+    self.mounting=false;
+    if(cb) cb(false);
+  });
 };
 function colsNow(){ return BT.cols; }
 PixiBoard.prototype.T=function(uri){
   if(!this.tex[uri]){
-    try{ this.tex[uri]=PIXI.Texture.from(uri); }catch(e){ this.tex[uri]=null; }
+    this.tex[uri]=PIXI.Assets.load(uri);
   }
   return this.tex[uri];
 };
 PixiBoard.prototype.resize=function(cell){ this.cell=cell; battleMounted=false; layoutBoard(); };
 PixiBoard.prototype.destroy=function(){
-  try{ if(this.app) this.app.destroy(true,{children:true}); }catch(e){}
-  this.app=null; this.layer=null; this.ready=false; this.tex={};
+  try{ if(this.app&&this.ready) this.app.destroy(true,{children:true}); }catch(e){}
+  this.app=null; this.layer=null; this.ready=false; this.mounting=false; this.tex={};
 };
 PixiBoard.prototype.render=function(B,view,opts){
   if(!this.ready||!this.layer||!B) return;
   var cell=this.cell,self=this,L=this.layer;
   L.removeChildren();
   function sp(uri,x,y,w,h,tint){
-    var s=new PIXI.Sprite(self.T(uri));
-    s.x=x; s.y=y; s.width=w; s.height=h;
+    var s=new PIXI.Sprite(PIXI.Texture.EMPTY);
+    s.x=x; s.y=y;
     if(tint!==undefined) s.tint=tint;
-    L.addChild(s); return s;
+    L.addChild(s);
+    self.T(uri).then(function(texture){
+      if(s.parent!==L||!self.ready) return;
+      s.texture=texture; s.width=w; s.height=h;
+    })['catch'](function(error){ fallbackBoard(self,error); });
+    return s;
   }
   function boxFrame(col,alpha,x,y,w,h,t){
     sp(solidUri(col,alpha),x,y,w,t);
@@ -5016,8 +5121,14 @@ function battleView(){
   if(!BT) return {hl:hl};
   if(BT.skill){
     var sk=skillOf(BT,BT.meSide);
-    if(sk&&sk.def.kind==='target'){
-      for(var y=0;y<BT.rows;y++) for(var x=0;x<BT.cols;x++) hl[x+','+y]='skill';
+    if(sk){
+      if(sk.def.kind==='unit'){
+        bUnits(BT,BT.meSide).forEach(function(u2){ hl[u2.x+','+u2.y]='skill'; });
+      }else if(sk.key==='dissent'){
+        bUnits(BT,enemyOf(BT.meSide)).forEach(function(u2){ hl[u2.x+','+u2.y]='skill'; });
+      }else if(sk.def.kind==='target'){
+        for(var y=0;y<BT.rows;y++) for(var x=0;x<BT.cols;x++) hl[x+','+y]='skill';
+      }
     }
     return {hl:hl};
   }
@@ -5026,7 +5137,6 @@ function battleView(){
     if(!u.moved){
       var reach=bReach(BT,u);
       for(var key in reach){
-        var pp=key.split(',');
         if(hl[key]) continue;
         hl[key]='move';
       }
@@ -5102,24 +5212,42 @@ function renderBattle(opts){
 }
 function renderBatPanel(){
   var box=el('batPanel'); if(!box) return;
-  var u=BT.sel?bUnitAtById(BT,BT.sel):null;
+  var u=BT.sel?bUnitAtById(BT,BT.sel):(BT.inspect?bUnitAtById(BT,BT.inspect):null);
   var html='';
   if(u){
     var stt=findState(bStateOf(BT,u.side)),T=TYPES[u.type],tile=bTile(BT,u.x,u.y);
-    var foe=u.side===BT.meSide?enemyOf(u.side):BT.meSide;
+    var isMine=(u.side===BT.meSide);
     var cnt=CNT[u.type];
     html+='<div class="unitcard"><img src="'+spriteUri(u.type,stt?stt.col:'#888')+'" alt="">'+
-      '<div><div class="nm">'+T.n[LANG]+'</div><div class="st">'+t('g_lead')+'HP '+u.hp+'/'+u.max+
+      '<div><div class="nm">'+T.n[LANG]+' <span style="font-size:10px;color:'+(isMine?'#8fe0a8':'#f0917f')+'">('+(isMine?t('side_me'):t('side_foe'))+')</span></div>'+
+      '<div class="st">'+t('g_lead')+'HP '+u.hp+'/'+u.max+
       (u.exp?'・'+t('exp')+' '+u.exp:'')+(u.acted?'・'+t('st_spent'):'')+'</div></div></div>'+
-      '<div class="statgrid"><span>'+t('th_move')+'<b>'+(u.moved?'-':T.move)+'</b></span>'+
+      '<div class="statgrid"><span>'+t('th_move')+'<b>'+(u.moved?'-':moveLimit(BT,u))+'</b></span>'+
       '<span>'+t('th_range')+'<b>'+rangeOf(BT,u)+'</b></span>'+
-      '<span>'+t('th_atk')+'<b>'+Math.round(T.atk*u.atkMul)+'</b></span>'+
+      '<span>'+t('th_atk')+'<b>'+Math.round(T.atk*u.atkMul*(u.buff>0?1.5:1))+'</b></span>'+
       '<span>'+t('th_terr')+'<b>'+TERRAIN[tile.t].n[LANG]+'</b></span>'+
       '<span>'+t('k_morale')+'<b>'+defOf(BT,u.x,u.y)+'</b></span>'+
       '<span>'+t('th_cost2')+'<b>'+BT.tac[u.side]+'</b></span></div>'+
       '<div class="note">'+t('cnt_hint')+' '+TKEYS.map(function(k){
         return TYPES[k].glyph+'×'+(cnt[k]||1).toFixed(2).replace(/0$/,'');
       }).join(' ')+'</div>';
+    if(isMine&&!u.acted){
+      var tgs=bTargets(BT,u,u.x,u.y);
+      if(tgs.length){
+        html+='<div style="margin:4px 0">'+tgs.map(function(tg){
+          var edmg=Math.round(dmgOf(BT,u,tg,false));
+          if(tg.kind==='unit'){
+            var du=tg.u,m=CNT[u.type][du.type]||1,fl=flankOf(BT,u,tg);
+            var dist=Math.abs(u.x-du.x)+Math.abs(u.y-du.y);
+            var cdmg=(TYPES[du.type].range===1&&dist<=1&&edmg<du.hp&&u.buff<2)?Math.round(dmgOf(BT,du,{kind:'unit',u:u},true)*0.6):0;
+            return '<div class="rowline"><span>⚔ '+TYPES[du.type].n[LANG]+' (HP'+du.hp+')'+(m>1?' ▲':(m<1?' ▼':''))+(fl?(' +'+fl*8+'%'):'')+'</span>'+
+              '<b>-'+edmg+(cdmg?(' / 反-'+cdmg):'')+'</b></div>';
+          }else{
+            return '<div class="rowline"><span>⚔ '+t('k_base')+' (HP'+Math.max(0,BT.baseHp[tg.side])+')</span><b>-'+edmg+'</b></div>';
+          }
+        }).join('')+'</div>';
+      }
+    }
   }else{
     html+='<div class="note" style="font-size:10.5px">'+t('hint_sel')+'</div>'+
       '<div class="note">'+t('k_weth')+'：'+t('w_'+BT.weather)+' — '+t('wd_'+BT.weather)+'</div>';
@@ -5136,7 +5264,7 @@ function onBoardTap(x,y){
   if(typeof audioReady==='function') audioReady();
   if(BT.skill){
     var sk=skillOf(BT,BT.meSide);
-    var needT=sk&&skNeedsTarget(sk.key);
+    var needT=sk&&skillNeedsTarget(sk.key);
     if(needT){
       if(useSkill(BT,BT.meSide,x,y)){ BT.skill=null; renderBattle(); saveGame(true); }
       else sfx('err');
@@ -5147,12 +5275,18 @@ function onBoardTap(x,y){
   }
   var u=bUnitAt(BT,x,y);
   if(u&&u.side===BT.meSide){
+    BT.inspect=null;
     if(BT.sel===u.id){ BT.sel=null; sfx('unsel'); }
     else { BT.sel=u.id; BT.selMoved=u.moved; sfx('sel'); }
     renderBattle(); return;
   }
   var sel=BT.sel?bUnitAtById(BT,BT.sel):null;
-  if(!sel||sel.side!==BT.meSide||sel.acted){ BT.sel=null; renderBattle(); return; }
+  if(!sel||sel.side!==BT.meSide||sel.acted){
+    BT.sel=null;
+    BT.inspect=(u&&u.side!==BT.meSide)?u.id:null;
+    if(BT.inspect) sfx('ui');
+    renderBattle(); return;
+  }
   var tg=null;
   bTargets(BT,sel,sel.x,sel.y).forEach(function(c2){
     if(c2.kind==='unit'){ if(c2.u.x===x&&c2.u.y===y) tg=c2; }
@@ -5160,6 +5294,7 @@ function onBoardTap(x,y){
   });
   if(tg){
     pushUndoB();
+    BT.inspect=null;
     bAttack(BT,sel,tg);
     BT.sel=null;
     if(!BT.over&&BT.tac[BT.meSide]>=3&&!bUnits(BT,enemyOf(BT.meSide)).length){}
@@ -5172,13 +5307,14 @@ function onBoardTap(x,y){
     var reach=bReach(BT,sel);
     if(reach[x+','+y]!==undefined){
       pushUndoB();
+      BT.inspect=null;
       var fx=sel.x,fy=sel.y;
       bMove(BT,sel,x,y);
       sfx('move');
       renderBattle({skip:sel.id});
       fxMove(sel,fx,fy,function(){ if(BT) renderBattle(); });
       var t2=bTile(BT,x,y);
-      if(t2.t==='village'&&t2.owner===BT.meSide) bfx(BT,x,y,'＋','#a6f0c0');
+      if(t2.t==='village'&&t2.owner===BT.meSide) bfx(BT,x,y,'+4','#a6f0c0');
       var near=bTargets(BT,sel,x,y);
       if(!near.length) sel.acted=true;
       renderBatPanel(); renderBattle();
@@ -5186,7 +5322,9 @@ function onBoardTap(x,y){
       return;
     }
   }
-  BT.sel=null; sfx('unsel'); renderBattle();
+  BT.sel=null;
+  BT.inspect=(u&&u.side!==BT.meSide)?u.id:null;
+  sfx('unsel'); renderBattle();
 }
 /* =====================================================================
    11. 操作の割り当て

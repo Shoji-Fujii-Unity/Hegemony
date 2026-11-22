@@ -7,6 +7,7 @@ const dir=__dirname;
 const seasons=process.argv[2]||'36';
 const suites=[
   ['dom-contract.js',[],'HTML と JS の噛み合い'],
+  ['pixi-board.js',[],'PixiJS 盤面の非同期読み込み'],
   ['headless-test.js',[seasons],'エンジン不変条件'],
   ['stub-dom.js',[],'スタブ DOM での実操作']
 ];

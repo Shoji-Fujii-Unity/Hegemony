@@ -117,6 +117,26 @@ ok(/pixi\.js@8/.test(html),'PixiJS v8 の URL');
 ok(/gsap@3/.test(html),'GSAP v3 の URL');
 ok(/tone@14/.test(html),'Tone.js v14 の URL');
 ok(/chart\.js@4/.test(html),'Chart.js v4 の URL');
+['onload','onerror'].forEach(event=>{
+  const libCtx=vm.createContext({});
+  libCtx.window=libCtx;
+  const head=html.split('</head>')[0];
+  const scripts=/<script\b([^>]*)>([\s\S]*?)<\/script>/g;
+  let script,error=null,count=0;
+  try{
+    while((script=scripts.exec(head))){
+      if(/\bsrc=/.test(script[1])){
+        const handler=script[1].match(new RegExp('\\b'+event+'="([^"]*)"'));
+        if(handler){ vm.runInContext(handler[1],libCtx); count++; }
+      }else if(script[2].indexOf('window.__lib')>=0){
+        vm.runInContext(script[2],libCtx);
+      }
+    }
+  }catch(e){ error=e; }
+  const expected=event==='onload'?1:0;
+  ok(!error&&count===4&&['pixi','gsap','tone','chart'].every(k=>libCtx.LIBOK&&libCtx.LIBOK[k]===expected),
+    'CDN '+event+' を読み込み順に処理できる'+(error?': '+error.message:''));
+});
 blocks.concat(html.match(/<script src="[^"]+"/g)||[]).forEach(()=>{});
 ok(!/\bimport\s|\bexport\s|type="module"/.test(html),'ESM を使っていない（file:// で動く）');
 ok(!/\bfetch\s*\(|XMLHttpRequest/.test(js),'外部取り読み込みが無い（完全オフライン動作）');
